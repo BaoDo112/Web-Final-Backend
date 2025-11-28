@@ -1,0 +1,79 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  USER
+  INTERVIEWER
+  ADMIN
+}
+
+enum AuthProvider {
+  LOCAL       // Email/Pass
+  GOOGLE      // OAuth
+}
+
+enum BookingStatus {
+  PENDING
+  CONFIRMED
+  COMPLETED
+  CANCELLED
+}
+
+enum VideoStatus {
+  PROCESSING
+  READY
+  FAILED
+}
+
+model User {
+  id          String       @id @default(uuid())
+  email       String       @unique
+  password    String?      // Nullable (cho Google Login)
+  name        String?
+  avatar      String?
+  role        Role         @default(USER)
+  provider    AuthProvider @default(LOCAL)
+  providerId  String?      // Google ID
+  createdAt   DateTime     @default(now())
+  
+  videos            Video[]
+  bookingsAsUser    Booking[] @relation("UserBooking")
+  bookingsAsMentor  Booking[] @relation("MentorBooking")
+
+  @@index([email])
+}
+
+model Video {
+  id          String      @id @default(uuid())
+  title       String
+  videoUrl    String      // URL Public từ Cloudflare R2
+  status      VideoStatus @default(READY)
+  uploaderId  String
+  uploader    User        @relation(fields: [uploaderId], references: [id])
+  createdAt   DateTime    @default(now())
+}
+
+model Booking {
+  id            String        @id @default(uuid())
+  startTime     DateTime
+  endTime       DateTime
+  status        BookingStatus @default(PENDING)
+  meetingLink   String?       // P2P Link (WebRTC)
+  
+  userId        String
+  user          User          @relation("UserBooking", fields: [userId], references: [id])
+  
+  mentorId      String
+  mentor        User          @relation("MentorBooking", fields: [mentorId], references: [id])
+  
+  createdAt     DateTime      @default(now())
+
+  // Constraint: Chặn trùng lịch ở cấp Database
+  @@unique([mentorId, startTime]) 
+}
