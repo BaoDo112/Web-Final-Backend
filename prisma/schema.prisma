@@ -45,6 +45,7 @@ model User {
   videos            Video[]
   bookingsAsUser    Booking[] @relation("UserBooking")
   bookingsAsMentor  Booking[] @relation("MentorBooking")
+  interviewSessions InterviewSession[]
 
   @@index([email])
 }
@@ -76,4 +77,67 @@ model Booking {
 
   // Constraint: Chặn trùng lịch ở cấp Database
   @@unique([mentorId, startTime]) 
+}
+
+enum Difficulty {
+  EASY
+  MEDIUM
+  HARD
+}
+
+enum SessionStatus {
+  STARTED
+  COMPLETED
+}
+
+enum SessionType {
+  MOCK
+  PRACTICE
+}
+
+model Question {
+  id         String     @id @default(uuid())
+  content    String
+  difficulty Difficulty
+  category   String
+  tags       String[]
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+
+  interviewResponses InterviewResponse[]
+}
+
+model InterviewSession {
+  id        String        @id @default(uuid())
+  userId    String
+  user      User          @relation(fields: [userId], references: [id])
+  status    SessionStatus @default(STARTED)
+  type      SessionType   @default(MOCK)
+  createdAt DateTime      @default(now())
+  endedAt   DateTime?
+
+  responses InterviewResponse[]
+}
+
+model InterviewResponse {
+  id         String           @id @default(uuid())
+  sessionId  String
+  session    InterviewSession @relation(fields: [sessionId], references: [id])
+  questionId String
+  question   Question         @relation(fields: [questionId], references: [id])
+  videoUrl   String?
+  audioUrl   String?
+  transcript String?
+  createdAt  DateTime         @default(now())
+
+  feedback Feedback?
+}
+
+model Feedback {
+  id         String            @id @default(uuid())
+  responseId String            @unique
+  response   InterviewResponse @relation(fields: [responseId], references: [id])
+  score      Int
+  critique   String // JSON string or plain text
+  createdAt  DateTime          @default(now())
 }
