@@ -8,7 +8,7 @@ datasource db {
 }
 
 enum Role {
-  USER
+  INTERVIEWEE
   INTERVIEWER
   ADMIN
 }
@@ -31,21 +31,28 @@ enum VideoStatus {
   FAILED
 }
 
+enum PostType {
+  ARTICLE
+  VIDEO
+  QUESTION_SET
+}
+
 model User {
   id          String       @id @default(uuid())
   email       String       @unique
   password    String?      // Nullable (cho Google Login)
   name        String?
   avatar      String?
-  role        Role         @default(USER)
+  role        Role         @default(INTERVIEWEE)
   provider    AuthProvider @default(LOCAL)
   providerId  String?      // Google ID
   createdAt   DateTime     @default(now())
   
   videos            Video[]
+  posts             Post[]
+  sentMessages      Message[]
   bookingsAsUser    Booking[] @relation("UserBooking")
   bookingsAsMentor  Booking[] @relation("MentorBooking")
-  interviewSessions InterviewSession[]
 
   @@index([email])
 }
@@ -58,6 +65,21 @@ model Video {
   uploaderId  String
   uploader    User        @relation(fields: [uploaderId], references: [id])
   createdAt   DateTime    @default(now())
+}
+
+model Post {
+  id        String   @id @default(uuid())
+  title     String
+  content   String   // Rich text / Markdown
+  type      PostType @default(ARTICLE)
+  fileUrls  String[] // URLs from R2
+  videoUrl  String?  // URL from R2
+  
+  authorId  String
+  author    User     @relation(fields: [authorId], references: [id])
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model Booking {
@@ -73,71 +95,23 @@ model Booking {
   mentorId      String
   mentor        User          @relation("MentorBooking", fields: [mentorId], references: [id])
   
+  messages      Message[]
+  
   createdAt     DateTime      @default(now())
 
   // Constraint: Chặn trùng lịch ở cấp Database
   @@unique([mentorId, startTime]) 
 }
 
-enum Difficulty {
-  EASY
-  MEDIUM
-  HARD
-}
-
-enum SessionStatus {
-  STARTED
-  COMPLETED
-}
-
-enum SessionType {
-  MOCK
-  PRACTICE
-}
-
-model Question {
-  id         String     @id @default(uuid())
-  content    String
-  difficulty Difficulty
-  category   String
-  tags       String[]
-  createdAt  DateTime   @default(now())
-  updatedAt  DateTime   @updatedAt
-
-  interviewResponses InterviewResponse[]
-}
-
-model InterviewSession {
-  id        String        @id @default(uuid())
-  userId    String
-  user      User          @relation(fields: [userId], references: [id])
-  status    SessionStatus @default(STARTED)
-  type      SessionType   @default(MOCK)
-  createdAt DateTime      @default(now())
-  endedAt   DateTime?
-
-  responses InterviewResponse[]
-}
-
-model InterviewResponse {
-  id         String           @id @default(uuid())
-  sessionId  String
-  session    InterviewSession @relation(fields: [sessionId], references: [id])
-  questionId String
-  question   Question         @relation(fields: [questionId], references: [id])
-  videoUrl   String?
-  audioUrl   String?
-  transcript String?
-  createdAt  DateTime         @default(now())
-
-  feedback Feedback?
-}
-
-model Feedback {
-  id         String            @id @default(uuid())
-  responseId String            @unique
-  response   InterviewResponse @relation(fields: [responseId], references: [id])
-  score      Int
-  critique   String // JSON string or plain text
-  createdAt  DateTime          @default(now())
+model Message {
+  id        String   @id @default(uuid())
+  content   String
+  
+  bookingId String
+  booking   Booking  @relation(fields: [bookingId], references: [id])
+  
+  senderId  String
+  sender    User     @relation(fields: [senderId], references: [id])
+  
+  createdAt DateTime @default(now())
 }
