@@ -1,8 +1,9 @@
-import { Controller, Request, Post, UseGuards, Body, Get, Query, Put, Delete } from '@nestjs/common';
+import { Controller, Request, Post, UseGuards, Body, Get, Query, Put, Delete, Res } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { LocalAuthGuard } from './guards/local-auth.guard';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { CreateUserDto } from '../users/dto/create-user.dto';
+import { LoginDto } from './dto/login.dto';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiBody, ApiQuery } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
 
@@ -17,16 +18,7 @@ export class AuthController {
     @UseGuards(LocalAuthGuard)
     @Post('login')
     @ApiOperation({ summary: 'Login with email and password' })
-    @ApiBody({
-        schema: {
-            type: 'object',
-            properties: {
-                email: { type: 'string', example: 'user@example.com' },
-                password: { type: 'string', example: 'password123' },
-            },
-            required: ['email', 'password'],
-        },
-    })
+    @ApiBody({ type: LoginDto })
     @ApiResponse({ status: 200, description: 'Return JWT access token and user info.' })
     @ApiResponse({ status: 401, description: 'Invalid credentials or email not verified.' })
     async login(@Request() req) {
@@ -191,7 +183,17 @@ export class AuthController {
     @Get('google/callback')
     @UseGuards(AuthGuard('google'))
     @ApiOperation({ summary: 'Google OAuth Callback' })
-    async googleAuthRedirect(@Request() req) {
-        return this.authService.googleLogin(req);
+    async googleAuthRedirect(@Request() req, @Res() res) {
+        const result = await this.authService.googleLogin(req);
+        const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3001';
+
+        // Handle error case (result is string if error)
+        if (typeof result === 'string') {
+            return res.redirect(`${frontendUrl}/login?error=${encodeURIComponent(result)}`);
+        }
+
+        // Redirect to frontend with token as query parameter
+        const redirectUrl = `${frontendUrl}/auth/callback?token=${result.access_token}&user=${encodeURIComponent(JSON.stringify(result.user))}`;
+        return res.redirect(redirectUrl);
     }
 }
