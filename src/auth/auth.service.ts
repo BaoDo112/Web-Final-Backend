@@ -3,7 +3,7 @@ import { UsersService } from '../users/users.service';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { CreateUserDto } from '../users/dto/create-user.dto';
-import { Role } from '@prisma/client';
+import { Role, AuthProvider } from '@prisma/client';
 
 @Injectable()
 export class AuthService {
@@ -52,7 +52,7 @@ export class AuthService {
                 email,
                 name: `${firstName} ${lastName}`,
                 avatar: picture,
-                provider: 'GOOGLE',
+                provider: AuthProvider.GOOGLE,
                 providerId: 'google-oauth',
                 password: '',
                 role: Role.INTERVIEWEE

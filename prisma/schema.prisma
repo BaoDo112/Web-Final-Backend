@@ -7,6 +7,7 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// --- ENUMS ---
 enum Role {
   INTERVIEWEE
   INTERVIEWER
@@ -14,8 +15,8 @@ enum Role {
 }
 
 enum AuthProvider {
-  LOCAL       // Email/Pass
-  GOOGLE      // OAuth
+  LOCAL
+  GOOGLE
 }
 
 enum BookingStatus {
@@ -37,43 +38,85 @@ enum PostType {
   QUESTION_SET
 }
 
+// --- MODELS ---
+
 model User {
   id          String       @id @default(uuid())
   email       String       @unique
-  password    String?      // Nullable (cho Google Login)
+  password    String?      // Nullable cho Google Login
   name        String?
   avatar      String?
+  
   role        Role         @default(INTERVIEWEE)
   provider    AuthProvider @default(LOCAL)
-  providerId  String?      // Google ID
-  createdAt   DateTime     @default(now())
+  providerId  String?      // Google ID (sub)
   
-  videos            Video[]
-  posts             Post[]
-  sentMessages      Message[]
-  bookingsAsUser    Booking[] @relation("UserBooking")
-  bookingsAsMentor  Booking[] @relation("MentorBooking")
+  // Auth Security Fields
+  isVerified    Boolean    @default(false) // Đã xác thực email chưa?
+  refreshToken  String?    // Lưu hashed token để làm tính năng Force Logout
+  
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  
+  // Relations
+  interviewerProfile InterviewerProfile? // Chỉ có nếu role = INTERVIEWER
+  
+  videos             Video[]
+  posts              Post[]
+  sentMessages       Message[]
+  bookingsAsUser     Booking[] @relation("UserBooking")
+  bookingsAsMentor   Booking[] @relation("MentorBooking")
+  tokens             Token[]   // Các token reset pass/verify email
 
   @@index([email])
+}
+
+// Bảng chuyên biệt cho Mentor (Tách data cho sạch)
+model InterviewerProfile {
+  id          String   @id @default(uuid())
+  bio         String?  @db.Text
+  skills      String[] // Ví dụ: ["React", "NestJS", "System Design"]
+  experience  Int      @default(0) // Số năm kinh nghiệm
+  hourlyRate  Int      @default(0) // Giá thuê (VND/Point)
+  cvUrl       String?  // Link CV trên R2
+  isApproved  Boolean  @default(false) // Admin duyệt mới được hiện lên list
+  
+  userId      String   @unique // Quan hệ 1-1
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// Bảng lưu Token tạm thời (Verify Email / Reset Password)
+model Token {
+  id        String   @id @default(uuid())
+  token     String   @unique // Mã hash
+  type      String   // "EMAIL_VERIFY" hoặc "PASSWORD_RESET"
+  expiresAt DateTime
+  
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  createdAt DateTime @default(now())
 }
 
 model Video {
   id          String      @id @default(uuid())
   title       String
-  videoUrl    String      // URL Public từ Cloudflare R2
+  videoUrl    String      
   status      VideoStatus @default(READY)
+  
   uploaderId  String
   uploader    User        @relation(fields: [uploaderId], references: [id])
+  
   createdAt   DateTime    @default(now())
 }
 
 model Post {
   id        String   @id @default(uuid())
   title     String
-  content   String   // Rich text / Markdown
+  content   String   @db.Text // Markdown
   type      PostType @default(ARTICLE)
-  fileUrls  String[] // URLs from R2
-  videoUrl  String?  // URL from R2
+  fileUrls  String[] 
+  videoUrl  String?  
   
   authorId  String
   author    User     @relation(fields: [authorId], references: [id])
@@ -87,7 +130,8 @@ model Booking {
   startTime     DateTime
   endTime       DateTime
   status        BookingStatus @default(PENDING)
-  meetingLink   String?       // P2P Link (WebRTC)
+  meetingLink   String?       
+  note          String?       // Ghi chú của học viên
   
   userId        String
   user          User          @relation("UserBooking", fields: [userId], references: [id])
@@ -99,7 +143,7 @@ model Booking {
   
   createdAt     DateTime      @default(now())
 
-  // Constraint: Chặn trùng lịch ở cấp Database
+  // Constraint: Một mentor không thể bị book trùng giờ
   @@unique([mentorId, startTime]) 
 }
 
