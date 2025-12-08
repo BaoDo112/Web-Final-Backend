@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateContentDto } from './dto/create-content.dto';
 import { ContentType, ContentStatus } from '@prisma/client';
@@ -8,12 +8,20 @@ export class LibraryService {
     constructor(private prisma: PrismaService) { }
 
     async create(userId: string, createContentDto: CreateContentDto) {
-        return this.prisma.content.create({
-            data: {
-                ...createContentDto,
-                authorId: userId,
-            },
-        });
+        try {
+            console.log('Creating content with userId:', userId);
+            console.log('Content data:', JSON.stringify(createContentDto, null, 2));
+
+            return await this.prisma.content.create({
+                data: {
+                    ...createContentDto,
+                    authorId: userId,
+                },
+            });
+        } catch (error) {
+            console.error('Error creating content:', error);
+            throw new BadRequestException(`Failed to create content: ${error.message}`);
+        }
     }
 
     async findAll(type?: ContentType, status?: ContentStatus) {
