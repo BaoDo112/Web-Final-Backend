@@ -1,5 +1,5 @@
 import { Injectable, OnModuleInit } from '@nestjs/common';
-import { S3Client, PutObjectCommand, ListBucketsCommand } from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
 @Injectable()
@@ -25,16 +25,13 @@ export class UploadService implements OnModuleInit {
     }
 
     async onModuleInit() {
-        // Optional: Verify connection or list buckets to find the correct one if not set
-        try {
-            const { Buckets } = await this.s3Client.send(new ListBucketsCommand({}));
-            console.log('Connected to R2. Available buckets:', Buckets?.map(b => b.Name).join(', '));
-            if (Buckets && Buckets.length > 0 && this.bucketName === 'edtech-platform') {
-                // Auto-detect bucket if placeholder is used and only one exists
-                // this.bucketName = Buckets[0].Name;
-            }
-        } catch (error) {
-            console.error('Failed to connect to R2:', error);
+        // Note: R2 bucket-scoped API tokens don't support ListBuckets operation
+        // The actual upload (PutObject) will work fine
+        const accountId = process.env.R2_ACCOUNT_ID || '';
+        if (accountId) {
+            console.log(`R2 configured with bucket: ${this.bucketName}`);
+        } else {
+            console.warn('R2_ACCOUNT_ID not set - file uploads will not work');
         }
     }
 
