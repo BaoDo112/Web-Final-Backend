@@ -9,6 +9,9 @@ import { LibraryModule } from './library/library.module';
 import { ChatModule } from './chat/chat.module';
 import { UploadModule } from './upload/upload.module';
 import { MailModule } from './mail/mail.module';
+import { BookingModule } from './booking/booking.module';
+import { ReviewModule } from './review/review.module';
+import { NotificationModule } from './notification/notification.module';
 
 @Module({
   imports: [
@@ -20,6 +23,9 @@ import { MailModule } from './mail/mail.module';
     ChatModule,
     UploadModule,
     MailModule,
+    BookingModule,
+    ReviewModule,
+    NotificationModule,
   ],
   controllers: [AppController],
   providers: [AppService],
