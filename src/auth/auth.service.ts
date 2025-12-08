@@ -129,34 +129,54 @@ export class AuthService {
             throw new NotFoundException('User not found');
         }
 
-        const updatedUser = await this.prisma.user.update({
-            where: { id: userId },
-            data: {
-                name: updateData.name,
-                phone: updateData.phone,
-                location: updateData.location,
-                bio: updateData.bio,
-                gender: updateData.gender as any,
-                dateOfBirth: updateData.dateOfBirth ? new Date(updateData.dateOfBirth) : undefined,
-                avatar: updateData.avatar,
-            },
-        });
+        // Validate gender enum
+        const validGenders = ['MALE', 'FEMALE', 'OTHER', 'PREFER_NOT_TO_SAY'];
+        const gender = updateData.gender && validGenders.includes(updateData.gender)
+            ? updateData.gender
+            : undefined;
 
-        return {
-            message: 'Profile updated successfully',
-            user: {
-                id: updatedUser.id,
-                email: updatedUser.email,
-                name: updatedUser.name,
-                phone: updatedUser.phone,
-                location: updatedUser.location,
-                bio: updatedUser.bio,
-                gender: updatedUser.gender,
-                dateOfBirth: updatedUser.dateOfBirth,
-                avatar: updatedUser.avatar,
-                role: updatedUser.role,
+        // Parse date safely
+        let dateOfBirth: Date | undefined = undefined;
+        if (updateData.dateOfBirth) {
+            const parsed = new Date(updateData.dateOfBirth);
+            if (!isNaN(parsed.getTime())) {
+                dateOfBirth = parsed;
             }
-        };
+        }
+
+        try {
+            const updatedUser = await this.prisma.user.update({
+                where: { id: userId },
+                data: {
+                    name: updateData.name || undefined,
+                    phone: updateData.phone || undefined,
+                    location: updateData.location || undefined,
+                    bio: updateData.bio || undefined,
+                    gender: gender as any,
+                    dateOfBirth,
+                    avatar: updateData.avatar || undefined,
+                },
+            });
+
+            return {
+                message: 'Profile updated successfully',
+                user: {
+                    id: updatedUser.id,
+                    email: updatedUser.email,
+                    name: updatedUser.name,
+                    phone: updatedUser.phone,
+                    location: updatedUser.location,
+                    bio: updatedUser.bio,
+                    gender: updatedUser.gender,
+                    dateOfBirth: updatedUser.dateOfBirth,
+                    avatar: updatedUser.avatar,
+                    role: updatedUser.role,
+                }
+            };
+        } catch (error) {
+            console.error('Error updating profile:', error);
+            throw new BadRequestException('Failed to update profile');
+        }
     }
 
     // ═══════════════════════════════════════════════════════════════

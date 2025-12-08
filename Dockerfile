@@ -19,6 +19,9 @@ COPY . .
 # Generate Prisma Client
 RUN npx prisma generate
 
+# Delete dist build for swagger
+RUN rm -rf dist
+
 # Build the application
 RUN npm run build
 
