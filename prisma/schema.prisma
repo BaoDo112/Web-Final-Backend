@@ -7,11 +7,14 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// --- ENUMS ---
+// ═══════════════════════════════════════════════════════════════
+// ENUMS
+// ═══════════════════════════════════════════════════════════════
+
 enum Role {
-  INTERVIEWEE
-  INTERVIEWER
-  ADMIN
+  INTERVIEWEE   // Người được phỏng vấn (Ứng viên)
+  INTERVIEWER   // Người phỏng vấn (Mentor)
+  ADMIN         // Quản trị viên
 }
 
 enum AuthProvider {
@@ -19,143 +22,362 @@ enum AuthProvider {
   GOOGLE
 }
 
+enum Gender {
+  MALE
+  FEMALE
+  OTHER
+  PREFER_NOT_TO_SAY
+}
+
 enum BookingStatus {
-  PENDING
-  CONFIRMED
-  COMPLETED
-  CANCELLED
+  PENDING     // Chờ xác nhận
+  CONFIRMED   // Đã xác nhận
+  COMPLETED   // Đã hoàn thành
+  CANCELLED   // Đã hủy
+  EXPIRED     // Đã hết hạn
 }
 
-enum VideoStatus {
-  PROCESSING
-  READY
-  FAILED
+enum ContentType {
+  ARTICLE       // Bài viết text/markdown
+  VIDEO         // Video hướng dẫn (có videoUrl)
+  QUESTION_SET  // Bộ câu hỏi (có questions JSON)
+  TUTORIAL      // Hướng dẫn step-by-step
 }
 
-enum PostType {
-  ARTICLE
-  VIDEO
-  QUESTION_SET
+enum Difficulty {
+  EASY
+  MEDIUM
+  HARD
 }
 
-// --- MODELS ---
+enum ContentStatus {
+  DRAFT         // Nháp
+  PENDING_REVIEW // Chờ duyệt (Admin)
+  PUBLISHED     // Đã xuất bản
+  ARCHIVED      // Lưu trữ
+}
+
+enum TokenType {
+  EMAIL_VERIFY
+  PASSWORD_RESET
+}
+
+enum NotificationType {
+  BOOKING_REQUEST
+  BOOKING_CONFIRMED
+  BOOKING_CANCELLED
+  BOOKING_REMINDER
+  NEW_REVIEW
+  NEW_MESSAGE
+  PROFILE_APPROVED
+  CONTENT_APPROVED
+  SYSTEM
+}
+
+// ═══════════════════════════════════════════════════════════════
+// USER & PROFILE
+// ═══════════════════════════════════════════════════════════════
 
 model User {
-  id          String       @id @default(uuid())
-  email       String       @unique
-  password    String?      // Nullable cho Google Login
-  name        String?
-  avatar      String?
+  id            String       @id @default(uuid())
+  email         String       @unique
+  password      String?      // Nullable cho Google Login
+  name          String?
+  avatar        String?
   
-  role        Role         @default(INTERVIEWEE)
-  provider    AuthProvider @default(LOCAL)
-  providerId  String?      // Google ID (sub)
+  // Profile Fields
+  gender        Gender?
+  dateOfBirth   DateTime?
+  location      String?
+  bio           String?      @db.Text
+  phone         String?
   
-  // Auth Security Fields
-  isVerified    Boolean    @default(false) // Đã xác thực email chưa?
-  refreshToken  String?    // Lưu hashed token để làm tính năng Force Logout
+  // Auth & RBAC
+  role          Role         @default(INTERVIEWEE)
+  provider      AuthProvider @default(LOCAL)
+  providerId    String?      // Google ID
+  isVerified    Boolean      @default(false)
+  isActive      Boolean      @default(true)  // Admin có thể disable
+  refreshToken  String?
   
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
+  // Stats (Denormalized)
+  totalBookings Int          @default(0)
+  currentStreak Int          @default(0)
+  lastActiveAt  DateTime?
+  
+  // Soft Delete
+  deletedAt     DateTime?
+  
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
   
   // Relations
-  interviewerProfile InterviewerProfile? // Chỉ có nếu role = INTERVIEWER
-  
-  videos             Video[]
-  posts              Post[]
+  interviewerProfile InterviewerProfile?
+  contents           Content[]     // Thay vì posts + videos riêng
   sentMessages       Message[]
-  bookingsAsUser     Booking[] @relation("UserBooking")
-  bookingsAsMentor   Booking[] @relation("MentorBooking")
-  tokens             Token[]   // Các token reset pass/verify email
+  bookingsAsUser     Booking[]     @relation("UserBookings")
+  bookingsAsMentor   Booking[]     @relation("MentorBookings")
+  tokens             Token[]
+  reviewsWritten     Review[]      @relation("ReviewAuthor")
+  reviewsReceived    Review[]      @relation("ReviewTarget")
+  notifications      Notification[]
 
   @@index([email])
+  @@index([role])
+  @@index([isActive])
+  @@index([deletedAt])
 }
 
-// Bảng chuyên biệt cho Mentor (Tách data cho sạch)
 model InterviewerProfile {
-  id          String   @id @default(uuid())
-  bio         String?  @db.Text
-  skills      String[] // Ví dụ: ["React", "NestJS", "System Design"]
-  experience  Int      @default(0) // Số năm kinh nghiệm
-  hourlyRate  Int      @default(0) // Giá thuê (VND/Point)
-  cvUrl       String?  // Link CV trên R2
-  isApproved  Boolean  @default(false) // Admin duyệt mới được hiện lên list
+  id            String     @id @default(uuid())
   
-  userId      String   @unique // Quan hệ 1-1
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // Professional Info
+  title         String?    // "Senior Software Engineer"
+  company       String?    // "Google"
+  bio           String?    @db.Text
+  skills        String[]   // ["React", "NestJS", "System Design"]
+  experience    Int        @default(0) // Số năm kinh nghiệm
+  hourlyRate    Int        @default(0)
+  cvUrl         String?
+  linkedinUrl   String?
+  
+  // Availability (JSON for flexibility)
+  // Format: { "mon": ["09:00-12:00", "14:00-18:00"], "tue": [...] }
+  availability  Json?
+  timezone      String     @default("Asia/Ho_Chi_Minh")
+  
+  // Stats (Denormalized)
+  rating        Float      @default(0)
+  totalReviews  Int        @default(0)
+  totalSessions Int        @default(0)
+  
+  // Admin approval workflow
+  isApproved    Boolean    @default(false)
+  approvedAt    DateTime?
+  approvedBy    String?    // Admin userId who approved
+  rejectionNote String?    // Lý do từ chối (nếu có)
+  
+  userId        String     @unique
+  user          User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  @@index([isApproved])
+  @@index([rating])
 }
 
-// Bảng lưu Token tạm thời (Verify Email / Reset Password)
+// ═══════════════════════════════════════════════════════════════
+// AUTH TOKENS
+// ═══════════════════════════════════════════════════════════════
+
 model Token {
-  id        String   @id @default(uuid())
-  token     String   @unique // Mã hash
-  type      String   // "EMAIL_VERIFY" hoặc "PASSWORD_RESET"
+  id        String    @id @default(uuid())
+  token     String    @unique
+  type      TokenType
   expiresAt DateTime
+  usedAt    DateTime? // Đã sử dụng chưa
   
   userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   
-  createdAt DateTime @default(now())
+  createdAt DateTime  @default(now())
+  
+  @@index([token])
+  @@index([userId, type])
+  @@index([expiresAt])
 }
 
-model Video {
-  id          String      @id @default(uuid())
-  title       String
-  videoUrl    String      
-  status      VideoStatus @default(READY)
-  
-  uploaderId  String
-  uploader    User        @relation(fields: [uploaderId], references: [id])
-  
-  createdAt   DateTime    @default(now())
-}
-
-model Post {
-  id        String   @id @default(uuid())
-  title     String
-  content   String   @db.Text // Markdown
-  type      PostType @default(ARTICLE)
-  fileUrls  String[] 
-  videoUrl  String?  
-  
-  authorId  String
-  author    User     @relation(fields: [authorId], references: [id])
-  
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-}
+// ═══════════════════════════════════════════════════════════════
+// BOOKING & SESSIONS
+// ═══════════════════════════════════════════════════════════════
 
 model Booking {
-  id            String        @id @default(uuid())
-  startTime     DateTime
-  endTime       DateTime
-  status        BookingStatus @default(PENDING)
-  meetingLink   String?       
-  note          String?       // Ghi chú của học viên
+  id          String        @id @default(uuid())
   
-  userId        String
-  user          User          @relation("UserBooking", fields: [userId], references: [id])
+  // Time
+  startTime   DateTime
+  endTime     DateTime
+  duration    Int           @default(60) // minutes
+  timezone    String        @default("Asia/Ho_Chi_Minh")
   
-  mentorId      String
-  mentor        User          @relation("MentorBooking", fields: [mentorId], references: [id])
+  // Status
+  status      BookingStatus @default(PENDING)
+  meetingLink String?
+  note        String?       @db.Text
   
-  messages      Message[]
+  // Cancellation tracking
+  cancelledAt DateTime?
+  cancelledBy String?       // userId who cancelled
+  cancelReason String?
   
-  createdAt     DateTime      @default(now())
+  // Soft Delete
+  deletedAt   DateTime?
+  
+  // Relations
+  userId      String
+  user        User          @relation("UserBookings", fields: [userId], references: [id], onDelete: Restrict)
+  
+  mentorId    String
+  mentor      User          @relation("MentorBookings", fields: [mentorId], references: [id], onDelete: Restrict)
+  
+  messages    Message[]
+  review      Review?
+  
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
 
-  // Constraint: Một mentor không thể bị book trùng giờ
-  @@unique([mentorId, startTime]) 
+  @@unique([mentorId, startTime])
+  @@index([userId])
+  @@index([mentorId])
+  @@index([status])
+  @@index([startTime])
+  @@index([deletedAt])
 }
 
 model Message {
   id        String   @id @default(uuid())
-  content   String
+  content   String   @db.Text
+  isEdited  Boolean  @default(false)
   
   bookingId String
-  booking   Booking  @relation(fields: [bookingId], references: [id])
+  booking   Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
   
   senderId  String
-  sender    User     @relation(fields: [senderId], references: [id])
+  sender    User     @relation(fields: [senderId], references: [id], onDelete: Restrict)
   
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  @@index([bookingId])
+  @@index([senderId])
+  @@index([createdAt])
+}
+
+// ═══════════════════════════════════════════════════════════════
+// CONTENT (Unified: Articles, Videos, Question Sets)
+// ═══════════════════════════════════════════════════════════════
+
+model Content {
+  id           String        @id @default(uuid())
+  
+  // Basic Info
+  title        String
+  slug         String        @unique // URL-friendly, e.g., "top-10-interview-questions"
+  description  String?       @db.Text // Short summary
+  body         String?       @db.Text // Main content (Markdown)
+  
+  // Type & Categorization
+  type         ContentType   @default(ARTICLE)
+  difficulty   Difficulty?
+  category     String?       // "Frontend", "Backend", "System Design"
+  tags         String[]
+  
+  // Media
+  thumbnailUrl String?
+  videoUrl     String?       // For VIDEO type
+  fileUrls     String[]      // Attachments
+  
+  // For QUESTION_SET type
+  // Format: [{ question: "...", answer: "...", hint: "..." }]
+  questions    Json?
+  
+  // Metadata
+  duration     Int?          // minutes (for video/tutorial)
+  readTime     Int?          // minutes (for article)
+  
+  // Publishing
+  status       ContentStatus @default(DRAFT)
+  publishedAt  DateTime?
+  
+  // Stats (Denormalized)
+  viewCount    Int           @default(0)
+  likeCount    Int           @default(0)
+  rating       Float         @default(0)
+  reviewCount  Int           @default(0)
+  
+  // SEO
+  metaTitle    String?
+  metaDesc     String?
+  
+  // Soft Delete
+  deletedAt    DateTime?
+  
+  // Relations
+  authorId     String
+  author       User          @relation(fields: [authorId], references: [id], onDelete: Restrict)
+  reviews      Review[]
+  
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  
+  @@index([type])
+  @@index([status])
+  @@index([authorId])
+  @@index([category])
+  @@index([publishedAt])
+  @@index([deletedAt])
+}
+
+// ═══════════════════════════════════════════════════════════════
+// REVIEWS
+// ═══════════════════════════════════════════════════════════════
+
+model Review {
+  id        String   @id @default(uuid())
+  rating    Int      // 1-5 (validated in app layer)
+  comment   String?  @db.Text
+  
+  // Author
+  authorId  String
+  author    User     @relation("ReviewAuthor", fields: [authorId], references: [id], onDelete: Restrict)
+  
+  // Target: ONE of these (polymorphic)
+  bookingId    String?  @unique // 1 booking = 1 review (from interviewee)
+  booking      Booking? @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  
+  contentId    String?
+  content      Content? @relation(fields: [contentId], references: [id], onDelete: Cascade)
+  
+  targetUserId String?  // Review cho Interviewer profile
+  targetUser   User?    @relation("ReviewTarget", fields: [targetUserId], references: [id], onDelete: Cascade)
+  
+  // Moderation
+  isApproved   Boolean  @default(true) // Admin có thể ẩn review spam
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  @@unique([authorId, contentId])      // 1 user, 1 review per content
+  @@unique([authorId, targetUserId])   // 1 user, 1 review per interviewer
+  @@index([authorId])
+  @@index([contentId])
+  @@index([targetUserId])
+  @@index([rating])
+  @@index([isApproved])
+}
+
+// ═══════════════════════════════════════════════════════════════
+// NOTIFICATIONS
+// ═══════════════════════════════════════════════════════════════
+
+model Notification {
+  id        String           @id @default(uuid())
+  type      NotificationType
+  title     String
+  message   String           @db.Text
+  data      Json?            // Extra data
+  
+  isRead    Boolean          @default(false)
+  readAt    DateTime?
+  
+  userId    String
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  createdAt DateTime         @default(now())
+  
+  @@index([userId])
+  @@index([isRead])
+  @@index([createdAt])
+  @@index([userId, isRead])
 }
