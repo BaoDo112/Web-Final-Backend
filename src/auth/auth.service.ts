@@ -20,6 +20,10 @@ export class AuthService {
     async validateUser(email: string, pass: string): Promise<any> {
         const user = await this.usersService.findOne(email);
         if (user && user.password && (await bcrypt.compare(pass, user.password))) {
+            // Check if email is verified (skip for Google OAuth users)
+            if (!user.isVerified && user.provider !== 'GOOGLE') {
+                throw new UnauthorizedException('Please verify your email before logging in');
+            }
             const { password, ...result } = user;
             return result;
         }
