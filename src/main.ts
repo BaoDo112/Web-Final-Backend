@@ -10,8 +10,8 @@ async function bootstrap() {
   app.enableCors();
 
   const config = new DocumentBuilder()
-    .setTitle('EdTech API')
-    .setDescription('The EdTech Platform API description')
+    .setTitle('Nervis API')
+    .setDescription('The Nervis Interview Platform API')
     .setVersion('1.0')
     .addBearerAuth()
     .build();
