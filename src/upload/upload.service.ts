@@ -1,15 +1,5 @@
 import { Injectable, OnModuleInit, BadRequestException } from '@nestjs/common';
-import { S3Client, PutObjectCommand, DeleteObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
-import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
-import { v4 as uuidv4 } from 'uuid';
-
-interface UploadOptions {
-    folder: string;
-    fileName: string;
-    fileType: string;
-    maxSize?: number; // bytes
-    allowedTypes?: string[];
-}
+import { S3Client, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 
 @Injectable()
 export class UploadService implements OnModuleInit {
@@ -17,13 +7,13 @@ export class UploadService implements OnModuleInit {
     private bucketName: string;
     private publicBaseUrl: string;
 
-    // File size limits (bytes)
-    private readonly SIZE_LIMITS = {
-        avatar: 5 * 1024 * 1024,        // 5 MB
-        thumbnail: 2 * 1024 * 1024,     // 2 MB
-        video: 500 * 1024 * 1024,       // 500 MB
-        file: 50 * 1024 * 1024,         // 50 MB
-        cv: 10 * 1024 * 1024,           // 10 MB
+    // File size limits
+    private readonly MAX_SIZES = {
+        avatar: 5 * 1024 * 1024, // 5MB
+        thumbnail: 2 * 1024 * 1024, // 2MB
+        video: 500 * 1024 * 1024, // 500MB
+        file: 50 * 1024 * 1024, // 50MB
+        cv: 10 * 1024 * 1024, // 10MB
     };
 
     // Allowed MIME types
@@ -31,7 +21,7 @@ export class UploadService implements OnModuleInit {
         avatar: ['image/jpeg', 'image/png', 'image/webp', 'image/gif'],
         thumbnail: ['image/jpeg', 'image/png', 'image/webp'],
         video: ['video/mp4', 'video/webm', 'video/quicktime'],
-        file: ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/zip', 'application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'application/vnd.ms-powerpoint', 'application/vnd.openxmlformats-officedocument.presentationml.presentation'],
+        file: ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'text/plain', 'image/jpeg', 'image/png'],
         cv: ['application/pdf'],
     };
 
@@ -48,11 +38,11 @@ export class UploadService implements OnModuleInit {
                 accessKeyId,
                 secretAccessKey,
             },
-            forcePathStyle: true, // Required for R2 CORS to work properly
+            forcePathStyle: true,
         });
 
-        // Public URL (can be custom domain like cdn.nervis.dev)
-        this.publicBaseUrl = process.env.R2_PUBLIC_URL || `https://${accountId}.r2.cloudflarestorage.com/${this.bucketName}`;
+        // Public URL - use custom domain if available
+        this.publicBaseUrl = process.env.R2_PUBLIC_URL || `https://pub-${accountId}.r2.dev`;
     }
 
     async onModuleInit() {
@@ -60,102 +50,143 @@ export class UploadService implements OnModuleInit {
         if (accountId) {
             console.log(`✅ R2 configured with bucket: ${this.bucketName}`);
         } else {
-            console.warn('⚠️ R2_ACCOUNT_ID not set - file uploads will not work');
+            console.warn('⚠️ R2 not configured - R2_ACCOUNT_ID missing');
         }
     }
 
     // ═══════════════════════════════════════════════════════════════
-    // AVATAR UPLOAD
+    // AVATAR
     // ═══════════════════════════════════════════════════════════════
-    async getAvatarPresignedUrl(userId: string, fileType: string) {
-        this.validateFileType(fileType, this.ALLOWED_TYPES.avatar);
-        const ext = this.getExtension(fileType);
+    async uploadAvatar(userId: string, file: Express.Multer.File) {
+        this.validateFile(file, 'avatar');
+
+        const ext = this.getExtension(file.mimetype);
         const key = `avatars/${userId}/avatar.${ext}`;
-        return this.generatePresignedUrl(key, fileType, this.SIZE_LIMITS.avatar);
+
+        await this.uploadToR2(key, file.buffer, file.mimetype);
+
+        return {
+            url: `${this.publicBaseUrl}/${key}`,
+            key,
+        };
     }
 
     // ═══════════════════════════════════════════════════════════════
-    // CONTENT UPLOADS (Thumbnail, Video, Files)
+    // CONTENT THUMBNAIL
     // ═══════════════════════════════════════════════════════════════
-    async getContentThumbnailPresignedUrl(contentId: string, fileType: string) {
-        this.validateFileType(fileType, this.ALLOWED_TYPES.thumbnail);
-        const ext = this.getExtension(fileType);
+    async uploadContentThumbnail(contentId: string, file: Express.Multer.File) {
+        this.validateFile(file, 'thumbnail');
+
+        const ext = this.getExtension(file.mimetype);
         const key = `content/${contentId}/thumbnail.${ext}`;
-        return this.generatePresignedUrl(key, fileType, this.SIZE_LIMITS.thumbnail);
-    }
 
-    async getContentVideoPresignedUrl(contentId: string, fileType: string) {
-        this.validateFileType(fileType, this.ALLOWED_TYPES.video);
-        const key = `content/${contentId}/video/original.mp4`;
-        return this.generatePresignedUrl(key, fileType, this.SIZE_LIMITS.video);
-    }
+        await this.uploadToR2(key, file.buffer, file.mimetype);
 
-    async getContentFilePresignedUrl(contentId: string, fileName: string, fileType: string) {
-        this.validateFileType(fileType, this.ALLOWED_TYPES.file);
-        const safeFileName = this.sanitizeFileName(fileName);
-        const key = `content/${contentId}/files/${safeFileName}`;
-        return this.generatePresignedUrl(key, fileType, this.SIZE_LIMITS.file);
+        return {
+            url: `${this.publicBaseUrl}/${key}`,
+            key,
+        };
     }
 
     // ═══════════════════════════════════════════════════════════════
-    // CV UPLOAD
+    // CONTENT VIDEO
     // ═══════════════════════════════════════════════════════════════
-    async getCvPresignedUrl(userId: string, fileType: string) {
-        this.validateFileType(fileType, this.ALLOWED_TYPES.cv);
+    async uploadContentVideo(contentId: string, file: Express.Multer.File) {
+        this.validateFile(file, 'video');
+
+        const ext = this.getExtension(file.mimetype);
+        const key = `content/${contentId}/video/original.${ext}`;
+
+        await this.uploadToR2(key, file.buffer, file.mimetype);
+
+        return {
+            url: `${this.publicBaseUrl}/${key}`,
+            key,
+        };
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // CONTENT FILE
+    // ═══════════════════════════════════════════════════════════════
+    async uploadContentFile(contentId: string, file: Express.Multer.File) {
+        this.validateFile(file, 'file');
+
+        // Preserve original filename
+        const safeFilename = file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_');
+        const key = `content/${contentId}/files/${safeFilename}`;
+
+        await this.uploadToR2(key, file.buffer, file.mimetype);
+
+        return {
+            url: `${this.publicBaseUrl}/${key}`,
+            key,
+            filename: file.originalname,
+        };
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // CV
+    // ═══════════════════════════════════════════════════════════════
+    async uploadCV(userId: string, file: Express.Multer.File) {
+        this.validateFile(file, 'cv');
+
         const key = `cv/${userId}/cv.pdf`;
-        return this.generatePresignedUrl(key, fileType, this.SIZE_LIMITS.cv);
-    }
 
-    // ═══════════════════════════════════════════════════════════════
-    // GENERIC PRESIGN (legacy compatibility)
-    // ═══════════════════════════════════════════════════════════════
-    async getPresignedUrl(fileName: string, fileType: string) {
-        const key = `uploads/${Date.now()}-${this.sanitizeFileName(fileName)}`;
-        return this.generatePresignedUrl(key, fileType, this.SIZE_LIMITS.file);
+        await this.uploadToR2(key, file.buffer, file.mimetype);
+
+        return {
+            url: `${this.publicBaseUrl}/${key}`,
+            key,
+        };
     }
 
     // ═══════════════════════════════════════════════════════════════
     // DELETE FILE
     // ═══════════════════════════════════════════════════════════════
     async deleteFile(key: string) {
-        try {
-            const command = new DeleteObjectCommand({
-                Bucket: this.bucketName,
-                Key: key,
-            });
-            await this.s3Client.send(command);
-            return { success: true };
-        } catch (error) {
-            console.error('Failed to delete file:', error);
-            throw new BadRequestException('Failed to delete file');
-        }
+        const command = new DeleteObjectCommand({
+            Bucket: this.bucketName,
+            Key: key,
+        });
+
+        await this.s3Client.send(command);
+        return { success: true, message: 'File deleted' };
     }
 
     // ═══════════════════════════════════════════════════════════════
-    // PRIVATE HELPERS
+    // HELPERS
     // ═══════════════════════════════════════════════════════════════
-    private async generatePresignedUrl(key: string, contentType: string, maxSize: number) {
+    private async uploadToR2(key: string, buffer: Buffer, contentType: string) {
         const command = new PutObjectCommand({
             Bucket: this.bucketName,
             Key: key,
+            Body: buffer,
             ContentType: contentType,
         });
 
-        const uploadUrl = await getSignedUrl(this.s3Client, command, { expiresIn: 3600 });
-        const publicUrl = `${this.publicBaseUrl}/${key}`;
-
-        return {
-            uploadUrl,
-            publicUrl,
-            key,
-            maxSize,
-            contentType,
-        };
+        try {
+            await this.s3Client.send(command);
+            console.log(`✅ Uploaded: ${key}`);
+        } catch (error) {
+            console.error(`❌ Upload failed for ${key}:`, error);
+            throw new BadRequestException(`Failed to upload file: ${error.message}`);
+        }
     }
 
-    private validateFileType(fileType: string, allowedTypes: string[]) {
-        if (!allowedTypes.includes(fileType)) {
-            throw new BadRequestException(`Invalid file type: ${fileType}. Allowed: ${allowedTypes.join(', ')}`);
+    private validateFile(file: Express.Multer.File, type: keyof typeof this.MAX_SIZES) {
+        if (!file) {
+            throw new BadRequestException('No file provided');
+        }
+
+        const maxSize = this.MAX_SIZES[type];
+        const allowedTypes = this.ALLOWED_TYPES[type];
+
+        if (file.size > maxSize) {
+            throw new BadRequestException(`File size exceeds ${maxSize / 1024 / 1024}MB limit`);
+        }
+
+        if (!allowedTypes.includes(file.mimetype)) {
+            throw new BadRequestException(`Invalid file type. Allowed: ${allowedTypes.join(', ')}`);
         }
     }
 
@@ -171,13 +202,5 @@ export class UploadService implements OnModuleInit {
             'application/pdf': 'pdf',
         };
         return map[mimeType] || 'bin';
-    }
-
-    private sanitizeFileName(fileName: string): string {
-        return fileName
-            .toLowerCase()
-            .replace(/[^a-z0-9.-]/g, '_')
-            .replace(/_+/g, '_')
-            .substring(0, 100);
     }
 }
