@@ -1,24 +1,28 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { CreatePostDto } from './dto/create-post.dto';
-import { PostType } from '@prisma/client';
+import { CreateContentDto } from './dto/create-content.dto';
+import { ContentType, ContentStatus } from '@prisma/client';
 
 @Injectable()
 export class LibraryService {
     constructor(private prisma: PrismaService) { }
 
-    async create(userId: string, createPostDto: CreatePostDto) {
-        return this.prisma.post.create({
+    async create(userId: string, createContentDto: CreateContentDto) {
+        return this.prisma.content.create({
             data: {
-                ...createPostDto,
+                ...createContentDto,
                 authorId: userId,
             },
         });
     }
 
-    async findAll(type?: PostType) {
-        return this.prisma.post.findMany({
-            where: type ? { type } : undefined,
+    async findAll(type?: ContentType, status?: ContentStatus) {
+        return this.prisma.content.findMany({
+            where: {
+                type: type || undefined,
+                status: status || ContentStatus.PUBLISHED,
+                deletedAt: null,
+            },
             orderBy: { createdAt: 'desc' },
             include: {
                 author: {
@@ -29,12 +33,99 @@ export class LibraryService {
     }
 
     async findOne(id: string) {
-        return this.prisma.post.findUnique({
-            where: { id },
+        const content = await this.prisma.content.findUnique({
+            where: { id, deletedAt: null },
             include: {
                 author: {
                     select: { id: true, name: true, avatar: true },
                 },
+                reviews: {
+                    include: {
+                        author: {
+                            select: { id: true, name: true, avatar: true },
+                        },
+                    },
+                    orderBy: { createdAt: 'desc' },
+                    take: 10,
+                },
+            },
+        });
+
+        if (!content) {
+            throw new NotFoundException('Content not found');
+        }
+
+        // Increment view count
+        await this.prisma.content.update({
+            where: { id },
+            data: { viewCount: { increment: 1 } },
+        });
+
+        return content;
+    }
+
+    async findBySlug(slug: string) {
+        const content = await this.prisma.content.findUnique({
+            where: { slug, deletedAt: null },
+            include: {
+                author: {
+                    select: { id: true, name: true, avatar: true },
+                },
+            },
+        });
+
+        if (!content) {
+            throw new NotFoundException('Content not found');
+        }
+
+        return content;
+    }
+
+    async update(id: string, userId: string, updateData: Partial<CreateContentDto>) {
+        const content = await this.prisma.content.findUnique({
+            where: { id },
+        });
+
+        if (!content || content.authorId !== userId) {
+            throw new NotFoundException('Content not found or not authorized');
+        }
+
+        return this.prisma.content.update({
+            where: { id },
+            data: updateData,
+        });
+    }
+
+    async delete(id: string, userId: string) {
+        const content = await this.prisma.content.findUnique({
+            where: { id },
+        });
+
+        if (!content || content.authorId !== userId) {
+            throw new NotFoundException('Content not found or not authorized');
+        }
+
+        // Soft delete
+        return this.prisma.content.update({
+            where: { id },
+            data: { deletedAt: new Date() },
+        });
+    }
+
+    async publish(id: string, userId: string) {
+        const content = await this.prisma.content.findUnique({
+            where: { id },
+        });
+
+        if (!content || content.authorId !== userId) {
+            throw new NotFoundException('Content not found or not authorized');
+        }
+
+        return this.prisma.content.update({
+            where: { id },
+            data: {
+                status: ContentStatus.PUBLISHED,
+                publishedAt: new Date(),
             },
         });
     }
