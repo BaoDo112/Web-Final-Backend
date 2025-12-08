@@ -1,0 +1,60 @@
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: nervis_postgres
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres_password
+      POSTGRES_DB: nervis_platform
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - nervis_network
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U postgres" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: ./Web-Final-Backend
+      dockerfile: Dockerfile
+    container_name: nervis_api
+    restart: always
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres_password@db:5432/nervis_platform?schema=public
+      JWT_SECRET: ${JWT_SECRET:-super_secret_jwt_key_change_me}
+      PORT: 3000
+    ports:
+      - "3000:3000"
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - nervis_network
+
+  web:
+    build:
+      context: ./Web-Final-Frontend
+      dockerfile: Dockerfile
+    container_name: nervis_web
+    restart: always
+    environment:
+      NEXT_PUBLIC_API_URL: http://api:3000
+    ports:
+      - "3001:3000"
+    depends_on:
+      - api
+    networks:
+      - nervis_network
+
+networks:
+  nervis_network:
+    driver: bridge
+
+volumes:
+  postgres_data:
