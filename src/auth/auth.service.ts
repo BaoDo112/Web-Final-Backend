@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException, ConflictException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, ConflictException, NotFoundException, BadRequestException } from '@nestjs/common';
 import { UsersService } from '../users/users.service';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
@@ -49,7 +49,6 @@ export class AuthService {
             throw new ConflictException('Password is required for registration');
         }
 
-        // Check if user already exists
         const existingUser = await this.usersService.findOne(createUserDto.email);
         if (existingUser) {
             throw new ConflictException('Email already registered');
@@ -61,18 +60,16 @@ export class AuthService {
             password: hashedPassword,
         });
 
-        // Create verification token
         const verificationToken = randomBytes(32).toString('hex');
         await this.prisma.token.create({
             data: {
                 token: verificationToken,
                 type: TokenType.EMAIL_VERIFY,
-                expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24 hours
+                expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
                 userId: user.id,
             },
         });
 
-        // Send verification email (fire and forget)
         this.mailService.sendVerificationEmail(
             user.email,
             user.name || 'User',
@@ -96,7 +93,7 @@ export class AuthService {
             include: { user: true },
         });
 
-        if (!tokenRecord) {
+        if (!tokenRecord || tokenRecord.type !== TokenType.EMAIL_VERIFY) {
             throw new ConflictException('Invalid verification token');
         }
 
@@ -105,18 +102,206 @@ export class AuthService {
             throw new ConflictException('Verification token has expired');
         }
 
-        // Mark user as verified
         await this.prisma.user.update({
             where: { id: tokenRecord.userId },
             data: { isVerified: true },
         });
 
-        // Delete the used token
         await this.prisma.token.delete({ where: { id: tokenRecord.id } });
 
         return { message: 'Email verified successfully' };
     }
 
+    // ═══════════════════════════════════════════════════════════════
+    // UPDATE PROFILE
+    // ═══════════════════════════════════════════════════════════════
+    async updateProfile(userId: string, updateData: {
+        name?: string;
+        phone?: string;
+        location?: string;
+        bio?: string;
+        gender?: string;
+        dateOfBirth?: string;
+        avatar?: string;
+    }) {
+        const user = await this.prisma.user.findUnique({ where: { id: userId } });
+        if (!user) {
+            throw new NotFoundException('User not found');
+        }
+
+        const updatedUser = await this.prisma.user.update({
+            where: { id: userId },
+            data: {
+                name: updateData.name,
+                phone: updateData.phone,
+                location: updateData.location,
+                bio: updateData.bio,
+                gender: updateData.gender as any,
+                dateOfBirth: updateData.dateOfBirth ? new Date(updateData.dateOfBirth) : undefined,
+                avatar: updateData.avatar,
+            },
+        });
+
+        return {
+            message: 'Profile updated successfully',
+            user: {
+                id: updatedUser.id,
+                email: updatedUser.email,
+                name: updatedUser.name,
+                phone: updatedUser.phone,
+                location: updatedUser.location,
+                bio: updatedUser.bio,
+                gender: updatedUser.gender,
+                dateOfBirth: updatedUser.dateOfBirth,
+                avatar: updatedUser.avatar,
+                role: updatedUser.role,
+            }
+        };
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // CHANGE PASSWORD
+    // ═══════════════════════════════════════════════════════════════
+    async changePassword(userId: string, currentPassword: string, newPassword: string) {
+        const user = await this.prisma.user.findUnique({ where: { id: userId } });
+        if (!user) {
+            throw new NotFoundException('User not found');
+        }
+
+        if (!user.password) {
+            throw new BadRequestException('Cannot change password for OAuth accounts');
+        }
+
+        const isPasswordValid = await bcrypt.compare(currentPassword, user.password);
+        if (!isPasswordValid) {
+            throw new BadRequestException('Current password is incorrect');
+        }
+
+        if (newPassword.length < 6) {
+            throw new BadRequestException('New password must be at least 6 characters');
+        }
+
+        const hashedPassword = await bcrypt.hash(newPassword, 10);
+        await this.prisma.user.update({
+            where: { id: userId },
+            data: { password: hashedPassword },
+        });
+
+        return { message: 'Password changed successfully' };
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // FORGOT PASSWORD - Send magic link
+    // ═══════════════════════════════════════════════════════════════
+    async forgotPassword(email: string) {
+        const user = await this.usersService.findOne(email);
+
+        // Always return success to prevent email enumeration
+        if (!user) {
+            return { message: 'If an account exists with this email, you will receive a password reset link.' };
+        }
+
+        if (user.provider === AuthProvider.GOOGLE) {
+            return { message: 'This account uses Google login. Please sign in with Google.' };
+        }
+
+        // Delete any existing password reset tokens for this user
+        await this.prisma.token.deleteMany({
+            where: {
+                userId: user.id,
+                type: TokenType.PASSWORD_RESET,
+            },
+        });
+
+        // Create new reset token
+        const resetToken = randomBytes(32).toString('hex');
+        await this.prisma.token.create({
+            data: {
+                token: resetToken,
+                type: TokenType.PASSWORD_RESET,
+                expiresAt: new Date(Date.now() + 60 * 60 * 1000), // 1 hour
+                userId: user.id,
+            },
+        });
+
+        // Send reset email
+        const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3001';
+        const resetLink = `${frontendUrl}/reset-password?token=${resetToken}`;
+
+        await this.mailService.sendPasswordResetEmail(
+            user.email,
+            user.name || 'User',
+            resetLink
+        ).catch(err => console.error('Failed to send password reset email:', err));
+
+        return { message: 'If an account exists with this email, you will receive a password reset link.' };
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // RESET PASSWORD - With token from email
+    // ═══════════════════════════════════════════════════════════════
+    async resetPassword(token: string, newPassword: string) {
+        const tokenRecord = await this.prisma.token.findUnique({
+            where: { token },
+            include: { user: true },
+        });
+
+        if (!tokenRecord || tokenRecord.type !== TokenType.PASSWORD_RESET) {
+            throw new BadRequestException('Invalid or expired reset token');
+        }
+
+        if (tokenRecord.expiresAt < new Date()) {
+            await this.prisma.token.delete({ where: { id: tokenRecord.id } });
+            throw new BadRequestException('Reset token has expired');
+        }
+
+        if (newPassword.length < 6) {
+            throw new BadRequestException('Password must be at least 6 characters');
+        }
+
+        const hashedPassword = await bcrypt.hash(newPassword, 10);
+        await this.prisma.user.update({
+            where: { id: tokenRecord.userId },
+            data: { password: hashedPassword },
+        });
+
+        await this.prisma.token.delete({ where: { id: tokenRecord.id } });
+
+        return { message: 'Password reset successfully. You can now log in with your new password.' };
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // DELETE ACCOUNT (Soft delete)
+    // ═══════════════════════════════════════════════════════════════
+    async deleteAccount(userId: string, password: string) {
+        const user = await this.prisma.user.findUnique({ where: { id: userId } });
+        if (!user) {
+            throw new NotFoundException('User not found');
+        }
+
+        // For local accounts, verify password
+        if (user.provider === AuthProvider.LOCAL && user.password) {
+            const isPasswordValid = await bcrypt.compare(password, user.password);
+            if (!isPasswordValid) {
+                throw new BadRequestException('Password is incorrect');
+            }
+        }
+
+        // Soft delete - set deletedAt timestamp
+        await this.prisma.user.update({
+            where: { id: userId },
+            data: {
+                deletedAt: new Date(),
+                isActive: false,
+            },
+        });
+
+        return { message: 'Account deleted successfully' };
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // GOOGLE LOGIN
+    // ═══════════════════════════════════════════════════════════════
     async googleLogin(req) {
         if (!req.user) {
             return 'No user from google';
