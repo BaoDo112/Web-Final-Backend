@@ -36,7 +36,7 @@ export class UploadService implements OnModuleInit {
     };
 
     constructor() {
-        this.bucketName = process.env.R2_BUCKET_NAME || 'edtech-platform';
+        this.bucketName = process.env.R2_BUCKET_NAME || 'nervis';
         const accountId = process.env.R2_ACCOUNT_ID || '';
         const accessKeyId = process.env.R2_ACCESS_KEY_ID || '';
         const secretAccessKey = process.env.R2_SECRET_ACCESS_KEY || '';
@@ -48,6 +48,7 @@ export class UploadService implements OnModuleInit {
                 accessKeyId,
                 secretAccessKey,
             },
+            forcePathStyle: true, // Required for R2 CORS to work properly
         });
 
         // Public URL (can be custom domain like cdn.nervis.dev)
