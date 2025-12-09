@@ -12,6 +12,7 @@ import { MailModule } from './mail/mail.module';
 import { BookingModule } from './booking/booking.module';
 import { ReviewModule } from './review/review.module';
 import { NotificationModule } from './notification/notification.module';
+import { VideoCallModule } from './video-call/video-call.module';
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { NotificationModule } from './notification/notification.module';
     BookingModule,
     ReviewModule,
     NotificationModule,
+    VideoCallModule,
   ],
   controllers: [AppController],
   providers: [AppService],
