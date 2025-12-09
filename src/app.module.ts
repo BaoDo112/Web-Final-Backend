@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { ScheduleModule } from '@nestjs/schedule';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { PrismaModule } from './prisma/prisma.module';
@@ -7,10 +8,29 @@ import { AuthModule } from './auth/auth.module';
 import { LibraryModule } from './library/library.module';
 import { ChatModule } from './chat/chat.module';
 import { UploadModule } from './upload/upload.module';
+import { MailModule } from './mail/mail.module';
+import { BookingModule } from './booking/booking.module';
+import { ReviewModule } from './review/review.module';
+import { NotificationModule } from './notification/notification.module';
+import { VideoCallModule } from './video-call/video-call.module';
 
 @Module({
-  imports: [PrismaModule, UsersModule, AuthModule, LibraryModule, ChatModule, UploadModule],
+  imports: [
+    ScheduleModule.forRoot(),
+    PrismaModule,
+    UsersModule,
+    AuthModule,
+    LibraryModule,
+    ChatModule,
+    UploadModule,
+    MailModule,
+    BookingModule,
+    ReviewModule,
+    NotificationModule,
+    VideoCallModule,
+  ],
   controllers: [AppController],
   providers: [AppService],
 })
 export class AppModule { }
+
