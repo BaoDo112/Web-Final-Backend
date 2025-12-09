@@ -44,6 +44,39 @@ export class AuthService {
         };
     }
 
+    // ═══════════════════════════════════════════════════════════════
+    // GET FULL PROFILE
+    // ═══════════════════════════════════════════════════════════════
+    async getFullProfile(userId: string) {
+        const user = await this.prisma.user.findUnique({
+            where: { id: userId },
+            include: {
+                interviewerProfile: true,
+            },
+        });
+
+        if (!user) {
+            throw new NotFoundException('User not found');
+        }
+
+        return {
+            id: user.id,
+            email: user.email,
+            name: user.name,
+            phone: user.phone,
+            location: user.location,
+            bio: user.bio,
+            gender: user.gender,
+            dateOfBirth: user.dateOfBirth,
+            avatar: user.avatar,
+            role: user.role,
+            isActive: user.isActive,
+            createdAt: user.createdAt,
+            updatedAt: user.updatedAt,
+            interviewerProfile: user.interviewerProfile,
+        };
+    }
+
     async register(createUserDto: CreateUserDto) {
         if (!createUserDto.password) {
             throw new ConflictException('Password is required for registration');
