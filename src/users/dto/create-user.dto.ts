@@ -1,6 +1,39 @@
-import { IsEmail, IsNotEmpty, IsString, MinLength, IsOptional, IsEnum } from 'class-validator';
+import { IsEmail, IsNotEmpty, IsString, MinLength, IsOptional, IsEnum, IsArray, IsNumber, ValidateNested } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Role, AuthProvider } from '@prisma/client';
+import { Type } from 'class-transformer';
+
+export class CreateInterviewerProfileDto {
+    @ApiPropertyOptional({ example: 'Senior Software Engineer' })
+    @IsString()
+    @IsOptional()
+    title?: string;
+
+    @ApiPropertyOptional({ example: 'Google' })
+    @IsString()
+    @IsOptional()
+    company?: string;
+
+    @ApiPropertyOptional({ example: 5 })
+    @IsNumber()
+    @IsOptional()
+    experience?: number;
+
+    @ApiPropertyOptional({ example: ['React', 'Node.js'] })
+    @IsArray()
+    @IsOptional()
+    skills?: string[];
+
+    @ApiPropertyOptional({ example: 'Experienced engineer with...' })
+    @IsString()
+    @IsOptional()
+    bio?: string;
+
+    @ApiPropertyOptional({ example: 'https://linkedin.com/in/...' })
+    @IsString()
+    @IsOptional()
+    linkedinUrl?: string;
+}
 
 export class CreateUserDto {
     @ApiProperty({ example: 'user@example.com', description: 'Email address' })
@@ -37,4 +70,10 @@ export class CreateUserDto {
     @IsString()
     @IsOptional()
     avatar?: string;
+
+    @ApiPropertyOptional({ description: 'Interviewer profile data (for INTERVIEWER role)' })
+    @ValidateNested()
+    @Type(() => CreateInterviewerProfileDto)
+    @IsOptional()
+    interviewerProfile?: CreateInterviewerProfileDto;
 }

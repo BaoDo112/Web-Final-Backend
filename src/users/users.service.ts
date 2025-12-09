@@ -8,8 +8,24 @@ export class UsersService {
     constructor(private prisma: PrismaService) { }
 
     async create(createUserDto: CreateUserDto): Promise<User> {
+        const { interviewerProfile, ...userData } = createUserDto;
+
+        // Create user with optional nested InterviewerProfile
         return this.prisma.user.create({
-            data: createUserDto,
+            data: {
+                ...userData,
+                ...(userData.role === Role.INTERVIEWER && interviewerProfile ? {
+                    interviewerProfile: {
+                        create: {
+                            title: interviewerProfile.title,
+                            company: interviewerProfile.company,
+                            experience: interviewerProfile.experience || 0,
+                            skills: interviewerProfile.skills || [],
+                            bio: interviewerProfile.bio,
+                        },
+                    },
+                } : {}),
+            },
         });
     }
 
