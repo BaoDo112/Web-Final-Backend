@@ -18,10 +18,11 @@ interface RoomMember {
 
 @WebSocketGateway({
     cors: {
-        origin: ['http://localhost:3001', 'https://nervis.dev'],
-        credentials: true,
+        origin: '*',
+        credentials: false,
     },
     namespace: '/video-call',
+    transports: ['polling', 'websocket'],
 })
 export class VideoCallGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @WebSocketServer()
