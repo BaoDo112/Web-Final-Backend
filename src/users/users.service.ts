@@ -43,7 +43,7 @@ export class UsersService {
             isActive: true,
             deletedAt: null,
             interviewerProfile: {
-                isApproved: true,
+                isNot: null, // Show any interviewer with profile (for testing)
             },
         };
 
