@@ -51,6 +51,10 @@ export class UploadController {
         @Param('contentId') contentId: string,
         @UploadedFile() file: Express.Multer.File
     ) {
+        console.log('📦 Upload thumbnail request received');
+        console.log('📦 ContentId:', contentId);
+        console.log('📦 File:', file ? { name: file.originalname, size: file.size, type: file.mimetype } : 'NO FILE');
+
         if (!file) {
             throw new BadRequestException('No file provided');
         }
