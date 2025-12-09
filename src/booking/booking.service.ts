@@ -167,6 +167,7 @@ export class BookingService {
             data: {
                 status: BookingStatus.CONFIRMED,
                 meetingLink: generatedLink,
+                meetingLink,
             },
         });
 
