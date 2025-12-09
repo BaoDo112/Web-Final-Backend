@@ -158,10 +158,15 @@ export class BookingService {
             throw new BadRequestException('Booking is not in pending status');
         }
 
+        // Auto-generate meeting link if not provided (unique room per booking)
+        const frontendUrl = process.env.FRONTEND_URL || 'https://nervis.dev';
+        const generatedLink = meetingLink || `${frontendUrl}/training1v1/call?room=booking-${id}`;
+
         const updated = await this.prisma.booking.update({
             where: { id },
             data: {
                 status: BookingStatus.CONFIRMED,
+                meetingLink: generatedLink,
                 meetingLink,
             },
         });

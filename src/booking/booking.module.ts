@@ -7,7 +7,6 @@ import { MailModule } from '../mail/mail.module';
 @Module({
     imports: [PrismaModule, MailModule],
     controllers: [BookingController],
-    providers: [BookingService],
     exports: [BookingService],
 })
 export class BookingModule { }
