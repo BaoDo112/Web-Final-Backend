@@ -190,8 +190,8 @@ export class BookingService {
             // Send confirmation email
             if (booking.user.email) {
                 console.log(`[BookingService] Sending confirmation email to ${booking.user.email}...`);
-                const date = booking.startTime.toLocaleDateString('vi-VN');
-                const time = booking.startTime.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+                const date = booking.startTime.toLocaleDateString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' });
+                const time = booking.startTime.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Ho_Chi_Minh' });
 
                 // Don't await email to prevent blocking, but catch errors properly
                 this.mailService.sendBookingConfirmedEmail(
