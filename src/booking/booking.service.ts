@@ -142,49 +142,78 @@ export class BookingService {
     // CONFIRM BOOKING (Mentor only)
     // ═══════════════════════════════════════════════════════════════
     async confirm(id: string, mentorId: string, meetingLink?: string) {
-        const booking = await this.prisma.booking.findUnique({
-            where: { id },
-            include: {
-                user: { select: { email: true, name: true } },
-                mentor: { select: { name: true } },
-            },
-        });
+        console.log(`[BookingService] Confirming booking ${id} for mentor ${mentorId}`);
+        try {
+            const booking = await this.prisma.booking.findUnique({
+                where: { id },
+                include: {
+                    user: { select: { email: true, name: true } },
+                    mentor: { select: { name: true } },
+                },
+            });
 
-        if (!booking || booking.mentorId !== mentorId) {
-            throw new NotFoundException('Booking not found or not authorized');
+            if (!booking) {
+                console.error(`[BookingService] Booking ${id} not found`);
+                throw new NotFoundException('Booking not found');
+            }
+            if (booking.mentorId !== mentorId) {
+                console.error(`[BookingService] Unauthorized access to booking ${id} by mentor ${mentorId}`);
+                throw new NotFoundException('Not authorized');
+            }
+
+            if (booking.status !== BookingStatus.PENDING) {
+                console.error(`[BookingService] Booking ${id} is not PENDING (status: ${booking.status})`);
+                throw new BadRequestException('Booking is not in pending status');
+            }
+
+            console.log(`[BookingService] Generating meeting link...`);
+            // Auto-generate meeting link if not provided (unique room per booking)
+            const frontendUrl = process.env.FRONTEND_URL || 'https://nervis.dev';
+            const generatedLink = meetingLink || `${frontendUrl}/training1v1/call?room=booking-${id}`;
+
+            console.log(`[BookingService] Updating booking status...`);
+            const updated = await this.prisma.booking.update({
+                where: { id },
+                data: {
+                    status: BookingStatus.CONFIRMED,
+                    meetingLink: generatedLink,
+                },
+            });
+
+            // Send confirmation email
+            if (booking.user.email) {
+                console.log(`[BookingService] Sending confirmation email to ${booking.user.email}...`);
+                const date = booking.startTime.toLocaleDateString('vi-VN');
+                const time = booking.startTime.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+
+                // Don't await email to prevent blocking, but catch errors properly
+                this.mailService.sendBookingConfirmedEmail(
+                    booking.user.email,
+                    booking.user.name || 'User',
+                    booking.mentor.name || 'Mentor',
+                    date,
+                    time,
+                    meetingLink
+                ).then(success => {
+                    if (success) console.log(`[BookingService] Email sent successfully`);
+                    else console.error(`[BookingService] Email sending failed (returned false)`);
+                }).catch(err => {
+                    console.error('[BookingService] Failed to send confirmation email (async catch):', err);
+                });
+            } else {
+                console.warn(`[BookingService] User has no email, skipping notification`);
+            }
+
+            console.log(`[BookingService] Booking confirmed successfully`);
+            return updated;
+        } catch (error) {
+            console.error('[BookingService] Error in confirm method:', error);
+            // Re-throw appropriate exceptions
+            if (error instanceof NotFoundException || error instanceof BadRequestException) {
+                throw error;
+            }
+            throw new Error(`Internal Server Error in Booking Confirmation: ${error.message}`);
         }
-
-        if (booking.status !== BookingStatus.PENDING) {
-            throw new BadRequestException('Booking is not in pending status');
-        }
-
-        // Auto-generate meeting link if not provided (unique room per booking)
-        const frontendUrl = process.env.FRONTEND_URL || 'https://nervis.dev';
-        const generatedLink = meetingLink || `${frontendUrl}/training1v1/call?room=booking-${id}`;
-
-        const updated = await this.prisma.booking.update({
-            where: { id },
-            data: {
-                status: BookingStatus.CONFIRMED,
-                meetingLink: generatedLink,
-            },
-        });
-
-        // Send confirmation email
-        if (booking.user.email) {
-            const date = booking.startTime.toLocaleDateString('vi-VN');
-            const time = booking.startTime.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
-            this.mailService.sendBookingConfirmedEmail(
-                booking.user.email,
-                booking.user.name || 'User',
-                booking.mentor.name || 'Mentor',
-                date,
-                time,
-                meetingLink
-            ).catch(err => console.error('Failed to send confirmation email:', err));
-        }
-
-        return updated;
     }
 
     // ═══════════════════════════════════════════════════════════════

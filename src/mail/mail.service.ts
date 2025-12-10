@@ -7,7 +7,19 @@ export class MailService {
   private resend: Resend;
 
   constructor() {
-    this.resend = new Resend(process.env.RESEND_API_KEY);
+    const apiKey = process.env.RESEND_API_KEY;
+    if (!apiKey) {
+      this.logger.warn('RESEND_API_KEY is missing. Email service will not work properly.');
+      // Initialize with dummy key to prevent immediate crash, or handle conditionally
+      // But Resend might throw on dummy key too when sending.
+      // Better to leave this.resend as undefined and check before usage, or try-catch initialization.
+    }
+
+    try {
+      this.resend = new Resend(apiKey || 're_123456789'); // Dummy key if missing to satisfy constructor type if possible
+    } catch (err) {
+      this.logger.error('Failed to initialize Resend client:', err);
+    }
   }
 
   private getEmailFrom(): string {
