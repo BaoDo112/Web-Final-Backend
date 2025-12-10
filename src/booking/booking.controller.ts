@@ -64,7 +64,8 @@ export class BookingController {
         @Param('id') id: string,
         @Body() body: { meetingLink?: string }
     ) {
-        return this.bookingService.confirm(id, req.user.id, body.meetingLink);
+        const meetingLink = body?.meetingLink;
+        return this.bookingService.confirm(id, req.user.id, meetingLink);
     }
 
     @Post(':id/cancel')

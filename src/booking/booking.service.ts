@@ -54,25 +54,32 @@ export class BookingService {
             throw new BadRequestException('Time slot already booked');
         }
 
-        const booking = await this.prisma.booking.create({
-            data: {
-                userId,
-                mentorId,
-                startTime: new Date(startTime),
-                endTime: new Date(endTime),
-                duration,
-                note,
-                status: BookingStatus.PENDING,
-            },
-            include: {
-                user: { select: { id: true, name: true, email: true } },
-                mentor: { select: { id: true, name: true, email: true } },
-            },
-        });
+        try {
+            const booking = await this.prisma.booking.create({
+                data: {
+                    userId,
+                    mentorId,
+                    startTime: new Date(startTime),
+                    endTime: new Date(endTime),
+                    duration,
+                    note,
+                    status: BookingStatus.PENDING,
+                },
+                include: {
+                    user: { select: { id: true, name: true, email: true } },
+                    mentor: { select: { id: true, name: true, email: true } },
+                },
+            });
 
-        // TODO: Send notification to mentor
+            // TODO: Send notification to mentor
 
-        return booking;
+            return booking;
+        } catch (error: any) {
+            if (error.code === 'P2002') {
+                throw new BadRequestException('Khung giờ này đã được đặt (trùng lịch). Vui lòng chọn giờ khác.');
+            }
+            throw error;
+        }
     }
 
     // ═══════════════════════════════════════════════════════════════
